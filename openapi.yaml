@@ -121,11 +121,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 invalidJson:
-                  summary: Invalid JSON payload
+                  summary: Invalid JSON input
                   value:
                     success: false
                     error:
-                      message: "Invalid JSON payload"
+                      message: "Invalid JSON input"
         '413':
           description: Payload too large
           content:
@@ -180,10 +180,11 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               examples:
                 invalidJson:
+                  summary: Invalid JSON input
                   value:
                     success: false
                     error:
-                      message: "Invalid JSON payload"
+                      message: "Invalid JSON input"
         '413':
           description: Payload too large
           content:
