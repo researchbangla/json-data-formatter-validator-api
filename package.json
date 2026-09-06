@@ -1,0 +1,15 @@
+{
+  "name": "json-data-formatter-validator-api",
+  "version": "0.1.0",
+  "description": "A small JSON formatting, validation, and minification API.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "researchbangla",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
