@@ -1,7 +1,34 @@
 const express = require('express');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Security: standard HTTP headers
+app.use(helmet());
+// Explicitly disable x-powered-by (helmet already does this, but be explicit)
+app.disable('x-powered-by');
+
+// Rate limiting: 100 requests per 15 minutes per IP, skip health and root
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Do not apply rate limiting to health or root endpoints
+  skip: (req) => req.path === '/health' || req.path === '/',
+  handler: (req, res) => {
+    res.status(429).json({
+      success: false,
+      error: {
+        message: 'Too many requests, please try again later.'
+      }
+    });
+  }
+});
+// Apply the rate limiter globally (with skip above to preserve health)
+app.use(limiter);
 
 // Parse JSON bodies up to 1 MB
 app.use(express.json({ limit: '1mb' }));
@@ -62,7 +89,8 @@ app.post('/api/format', (req, res) => {
     const formatted = JSON.stringify(value, null, 2);
     return res.json({ success: true, operation: 'format', data: formatted });
   } catch (err) {
-    return res.status(400).json({ success: false, error: { message: 'Invalid JSON input', details: err.message } });
+    // Keep response generic for security
+    return res.status(400).json({ success: false, error: { message: 'Invalid JSON input' } });
   }
 });
 
@@ -76,7 +104,8 @@ app.post('/api/minify', (req, res) => {
     const minified = JSON.stringify(value);
     return res.json({ success: true, operation: 'minify', data: minified });
   } catch (err) {
-    return res.status(400).json({ success: false, error: { message: 'Invalid JSON input', details: err.message } });
+    // Keep response generic for security
+    return res.status(400).json({ success: false, error: { message: 'Invalid JSON input' } });
   }
 });
 
