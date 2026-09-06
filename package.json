@@ -10,6 +10,8 @@
   "author": "researchbangla",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "helmet": "^6.0.1",
+    "express-rate-limit": "^6.7.0"
   }
 }
