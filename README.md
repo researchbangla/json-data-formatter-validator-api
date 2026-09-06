@@ -9,19 +9,22 @@ This service provides a small set of JSON utilities via HTTP endpoints:
 - Validate JSON strings/values
 - Health check and root information
 
-Base URL
-- Placeholder production URL (replace with your deployed host): https://{your-deployment-host}
+Production Base URL
+- https://json-data-formatter-validator-api.onrender.com
+
+Local development
 - When running locally use: http://localhost:3000 (or set PORT)
 
 Main features
 - Accepts either a JSON string (`json` field) or an already-parsed value (`data` field).
 - Returns consistent JSON responses with success/error payloads.
 - Enforces a 1 MB request body size limit.
-- Simple, dependency-light implementation (Express only).
+- Rate limiting: 100 requests per 15 minutes per IP. The root (`/`) and health (`/health`) endpoints are excluded from rate limiting so probes and uptime checks are not throttled.
+- Standard security headers are enabled via Helmet.
 
 Available endpoints
 - GET /  
-  - Description: API information (name, version, available endpoints)
+  - Description: API information (name, version, available endpoints)  
   - Response: 200 application/json
 
 - GET /health  
@@ -46,8 +49,8 @@ Available endpoints
   - Description: Validate JSON content — accepts `json` (string) or `data` (parsed)  
   - Request body: same shape as /api/format  
   - Success response: 200 application/json — { success: true, operation: 'validate', valid: true }  
-  - If parse fails: 200 application/json — { success: true, operation: 'validate', valid: false, error: { message: "<parser message>", position: null } }  
-    - Note: The current implementation returns HTTP 200 also for invalid JSON — this is intentional and documented here.
+  - If parse fails: 200 application/json — { success: true, operation: 'validate', valid: false, error: { message: "<parser message>", position: null } }
+    - Note: The current implementation intentionally returns HTTP 200 for validation results whether valid or invalid — inspect the `valid` field to determine validity.
   - Error response: 400 Bad Request (missing required body fields)
 
 Request format
@@ -57,11 +60,11 @@ Request format
   - Example JSON string body: { "json": "{\"name\":\"John\",\"age\":30}" }
   - Example data body: { "data": { "name": "John", "age": 30 } }
 
-Examples
+Examples (production)
 
 1) Format (curl)
 - Request:
-  curl -s -X POST http://localhost:3000/api/format \
+  curl -s -X POST https://json-data-formatter-validator-api.onrender.com/api/format \
     -H 'Content-Type: application/json' \
     -d '{"json":"{\"name\":\"John\",\"age\":30}"}'
 
@@ -74,7 +77,7 @@ Examples
 
 2) Minify (curl)
 - Request:
-  curl -s -X POST http://localhost:3000/api/minify \
+  curl -s -X POST https://json-data-formatter-validator-api.onrender.com/api/minify \
     -H 'Content-Type: application/json' \
     -d '{"data":{"a":1,"b":[1,2,3]}}'
 
@@ -87,7 +90,7 @@ Examples
 
 3) Validate (curl)
 - Valid JSON:
-  curl -s -X POST http://localhost:3000/api/validate \
+  curl -s -X POST https://json-data-formatter-validator-api.onrender.com/api/validate \
     -H 'Content-Type: application/json' \
     -d '{"json":"{\"x\":1}"}'
 
@@ -99,7 +102,7 @@ Examples
   }
 
 - Invalid JSON:
-  curl -s -X POST http://localhost:3000/api/validate \
+  curl -s -X POST https://json-data-formatter-validator-api.onrender.com/api/validate \
     -H 'Content-Type: application/json' \
     -d '{"json":"{x:1,"}'
 
@@ -114,6 +117,9 @@ Examples
     }
   }
 
+Local development examples
+- For local development and testing use http://localhost:3000 in the curl/fetch examples above.
+
 Error responses (examples)
 - Missing body or wrong shape (400):
   {
@@ -127,8 +133,7 @@ Error responses (examples)
   {
     "success": false,
     "error": {
-      "message": "Invalid JSON input",
-      "details": "Unexpected token x in JSON at position 1"
+      "message": "Invalid JSON input"
     }
   }
 
@@ -149,9 +154,9 @@ Content-Type requirements
 - Request Content-Type must be `application/json` for POST endpoints.
 - Responses are returned as `application/json`.
 
-Example JavaScript (fetch) usage
+Example JavaScript (fetch) usage (production)
 - Format example:
-  const res = await fetch('http://localhost:3000/api/format', {
+  const res = await fetch('https://json-data-formatter-validator-api.onrender.com/api/format', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ json: '{"name":"John","age":30}' })
@@ -160,7 +165,7 @@ Example JavaScript (fetch) usage
   console.log(body);
 
 - Validate example:
-  const res = await fetch('http://localhost:3000/api/validate', {
+  const res = await fetch('https://json-data-formatter-validator-api.onrender.com/api/validate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ json: '{x:1,' })
@@ -172,10 +177,10 @@ Detailed endpoint explanation (concise)
 - GET /health — Lightweight liveness check. Useful for load balancers or service monitors.
 - POST /api/format — Pretty-prints JSON into a string; accepts `json` (string) or `data` (value). Default indentation: 2 spaces. Use when you need human-readable formatting.
 - POST /api/minify — Produces compact stringified JSON. Use when you require compact transport or storage.
-- POST /api/validate — Validates that a JSON string is parseable. Returns `valid: true` or `valid: false` plus an error message when invalid. Note: returns HTTP 200 in either case; inspect the `valid` field to determine outcome.
+- POST /api/validate — Validates that a JSON string is parseable. Returns `valid: true` or `valid: false` plus an error message when invalid. Note: returns HTTP 200 in either case; inspect the `valid` field.
 
 Link to OpenAPI specification
-- The project includes an OpenAPI 3.0.3 specification at: `openapi.yaml` (root of the repository). The OpenAPI document reflects the current implementation.
+- The project includes an OpenAPI 3.0.3 specification at: `openapi.yaml` (root of the repository). The OpenAPI document reflects the current implementation and lists the production server URL.
 
 Installation & local development
 1. Requirements
@@ -196,13 +201,14 @@ Testing
 - There are no unit tests included in the current minimal project.
 - Test manually with curl or fetch examples above.
 - Example health check:
-  curl http://localhost:3000/health
+  curl https://json-data-formatter-validator-api.onrender.com/health
 
 Limitations / important notes
 - Payload limit: 1 MB enforced by the server.
+- Rate limiting: 100 requests per 15 minutes per IP. The `/` and `/health` endpoints are excluded from rate limiting to support monitoring and probes.
+- Standard security headers are enabled via Helmet.
 - The `validate` endpoint returns HTTP 200 for invalid JSON parse attempts; check the `valid` property to detect invalid input.
-- No authentication, rate limiting, or persistence is implemented — the project is intentionally minimal.
-- The openapi.yaml includes a placeholder server URL; replace with your deployment host when ready.
+- No authentication, database persistence, or premium features are implemented — the project is intentionally minimal.
 
 Contributing & contact
 - Contributions are welcome. Please open issues or PRs on the repository.
