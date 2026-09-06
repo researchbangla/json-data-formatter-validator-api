@@ -51,7 +51,7 @@ Available endpoints
   - Success response: 200 application/json — { success: true, operation: 'validate', valid: true }  
   - If parse fails: 200 application/json — { success: true, operation: 'validate', valid: false, error: { message: "<parser message>", position: null } }
     - Note: The current implementation intentionally returns HTTP 200 for validation results whether valid or invalid — inspect the `valid` field to determine validity.
-  - Error response: 400 Bad Request (missing required body fields)
+  - Error response: 400 Bad Request (missing or malformed request body)
 
 Request format
 - Content-Type: application/json
@@ -64,8 +64,8 @@ Examples (production)
 
 1) Format (curl)
 - Request:
-  curl -s -X POST https://json-data-formatter-validator-api.onrender.com/api/format \
-    -H 'Content-Type: application/json' \
+  curl -s -X POST "https://json-data-formatter-validator-api.onrender.com/api/format" \
+    -H "Content-Type: application/json" \
     -d '{"json":"{\"name\":\"John\",\"age\":30}"}'
 
 - Example success response (200):
@@ -77,8 +77,8 @@ Examples (production)
 
 2) Minify (curl)
 - Request:
-  curl -s -X POST https://json-data-formatter-validator-api.onrender.com/api/minify \
-    -H 'Content-Type: application/json' \
+  curl -s -X POST "https://json-data-formatter-validator-api.onrender.com/api/minify" \
+    -H "Content-Type: application/json" \
     -d '{"data":{"a":1,"b":[1,2,3]}}'
 
 - Example success response (200):
@@ -90,8 +90,8 @@ Examples (production)
 
 3) Validate (curl)
 - Valid JSON:
-  curl -s -X POST https://json-data-formatter-validator-api.onrender.com/api/validate \
-    -H 'Content-Type: application/json' \
+  curl -s -X POST "https://json-data-formatter-validator-api.onrender.com/api/validate" \
+    -H "Content-Type: application/json" \
     -d '{"json":"{\"x\":1}"}'
 
   Response (200):
@@ -102,8 +102,8 @@ Examples (production)
   }
 
 - Invalid JSON:
-  curl -s -X POST https://json-data-formatter-validator-api.onrender.com/api/validate \
-    -H 'Content-Type: application/json' \
+  curl -s -X POST "https://json-data-formatter-validator-api.onrender.com/api/validate" \
+    -H "Content-Type: application/json" \
     -d '{"json":"{x:1,"}'
 
   Response (200):
@@ -144,11 +144,16 @@ Error responses (examples)
   }
 
 HTTP status codes used by the API
-- 200 OK — successful responses (including validate results)
-- 400 Bad Request — missing or invalid input (malformed JSON or missing `json`/`data`)
-- 413 Payload Too Large — request body exceeds 1 MB limit
+- 200 OK — successful responses, including /api/validate results for both valid and invalid JSON strings
+- 400 Bad Request — malformed HTTP request body or missing/invalid required request fields; for /api/format and /api/minify, an invalid JSON string inside the "json" field also returns 400
+- 413 Payload Too Large — request body exceeds 1 MB
 - 404 Not Found — unknown routes
+- 429 Too Many Requests — rate limit exceeded
 - 500 Internal Server Error — unexpected server error
+
+Notes (explicit behavior)
+- /api/validate with an invalid JSON string returns HTTP 200 with { "valid": false } and an error message (position may be null).
+- A malformed HTTP request JSON body (invalid JSON or wrong shape) returns HTTP 400.
 
 Content-Type requirements
 - Request Content-Type must be `application/json` for POST endpoints.
