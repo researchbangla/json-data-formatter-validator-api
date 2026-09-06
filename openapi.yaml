@@ -8,13 +8,8 @@ info:
     expected request/response shapes. The spec matches the existing
     implementation in the repository and does not change runtime behavior.
 servers:
-  - url: https://{your-domain}
-    description: Placeholder production server URL — replace with your deployment URL (e.g. Render service URL)
-    variables:
-      your-domain:
-        default: example.com
-        description: Replace with your deployment host (hostname only, e.g. my-service.onrender.com)
-        # do not change unless you have an actual deployment URL
+  - url: https://json-data-formatter-validator-api.onrender.com
+    description: Production API server (Render deployment)
 tags:
   - name: info
     description: API information and health
