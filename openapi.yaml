@@ -1,0 +1,359 @@
+openapi: 3.0.3
+info:
+  title: JSON Data Formatter & Validator API
+  version: "0.1.0"
+  description: |
+    Minimal API for formatting, validating, and minifying JSON. This OpenAPI
+    specification documents the currently implemented endpoints and their
+    expected request/response shapes. The spec matches the existing
+    implementation in the repository and does not change runtime behavior.
+servers:
+  - url: https://{your-domain}
+    description: Placeholder production server URL — replace with your deployment URL (e.g. Render service URL)
+    variables: {}
+tags:
+  - name: info
+    description: API information and health
+  - name: formatting
+    description: JSON formatting and minification operations
+  - name: validation
+    description: JSON validation operations
+paths:
+  /:
+    get:
+      tags: [info]
+      summary: API information
+      description: Returns API name, version, and available endpoints.
+      responses:
+        '200':
+          description: API information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  version:
+                    type: string
+                  endpoints:
+                    type: object
+                    additionalProperties:
+                      type: string
+              examples:
+                info:
+                  summary: Example root response
+                  value:
+                    name: "JSON Data Formatter & Validator API"
+                    version: "0.1.0"
+                    endpoints:
+                      health: "/health (GET)"
+                      format: "/api/format (POST)"
+                      validate: "/api/validate (POST)"
+                      minify: "/api/minify (POST)"
+  /health:
+    get:
+      tags: [info]
+      summary: Health check
+      description: Returns a simple liveness/status response with uptime in seconds.
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  uptime:
+                    type: number
+                    example: 123.45
+  /api/format:
+    post:
+      tags: [formatting]
+      summary: Format / beautify JSON
+      description: |
+        Accepts either a JSON string in the `json` field or an already-parsed
+        value in the `data` field. Returns a prettified JSON string with
+        2-space indentation. Returns 400 for invalid input and 413 for payloads
+        larger than the configured limit (1 MB).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InputStringOrData'
+            examples:
+              jsonString:
+                summary: JSON string input
+                value:
+                  json: '{"name":"John","age":30}'
+              dataObject:
+                summary: Data object input
+                value:
+                  data:
+                    name: John
+                    age: 30
+      responses:
+        '200':
+          description: Formatted JSON string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormatResponse'
+              examples:
+                success:
+                  summary: Formatted result
+                  value:
+                    success: true
+                    operation: format
+                    data: |
+                      {
+                        "name": "John",
+                        "age": 30
+                      }
+        '400':
+          description: Bad request (invalid JSON or missing fields)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidJson:
+                  summary: Invalid JSON payload
+                  value:
+                    success: false
+                    error:
+                      message: "Invalid JSON payload"
+        '413':
+          description: Payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                tooLarge:
+                  summary: Payload too large
+                  value:
+                    success: false
+                    error:
+                      message: "Payload too large"
+  /api/minify:
+    post:
+      tags: [formatting]
+      summary: Minify JSON
+      description: Returns a compact JSON string representation of the provided value.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InputStringOrData'
+            examples:
+              jsonString:
+                value:
+                  json: '{"a":1,"b":2}'
+              dataObject:
+                value:
+                  data:
+                    a: 1
+                    b: 2
+      responses:
+        '200':
+          description: Minified JSON string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MinifyResponse'
+              examples:
+                success:
+                  value:
+                    success: true
+                    operation: minify
+                    data: '{"a":1,"b":2}'
+        '400':
+          description: Bad request (invalid JSON or missing fields)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidJson:
+                  value:
+                    success: false
+                    error:
+                      message: "Invalid JSON payload"
+        '413':
+          description: Payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                tooLarge:
+                  value:
+                    success: false
+                    error:
+                      message: "Payload too large"
+  /api/validate:
+    post:
+      tags: [validation]
+      summary: Validate JSON
+      description: |
+        Validates the supplied JSON. Accepts `json` (string) or `data` (already-parsed value).
+        Returns valid: true when parse succeeds, or valid: false with an error message when parse fails.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InputStringOrData'
+            examples:
+              validJson:
+                value:
+                  json: '{"x":1}'
+              invalidJson:
+                value:
+                  json: '{x:1,'
+      responses:
+        '200':
+          description: Validation result (always 200 for validate responses in current implementation)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateResponse'
+              examples:
+                valid:
+                  value:
+                    success: true
+                    operation: validate
+                    valid: true
+                invalid:
+                  value:
+                    success: true
+                    operation: validate
+                    valid: false
+                    error:
+                      message: "Unexpected token x in JSON at position 1"
+                      position: null
+        '400':
+          description: Bad request (missing json/data in body)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    InputStringOrData:
+      type: object
+      description: |
+        Request body must be a JSON object that includes either a `json` string field
+        containing JSON text, or a `data` field that is already a parsed JSON value.
+      properties:
+        json:
+          type: string
+          description: A JSON-encoded string (e.g. '{"a":1}')
+          example: '{"name":"John","age":30}'
+        data:
+          description: An already-parsed JSON value (object, array, primitive)
+          oneOf:
+            - type: object
+            - type: array
+            - type: string
+            - type: number
+            - type: boolean
+            - type: null
+      additionalProperties: false
+    FormatResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        operation:
+          type: string
+          example: format
+        data:
+          type: string
+          description: Formatted (pretty-printed) JSON string using 2 spaces
+          example: |
+            {
+              "name": "John",
+              "age": 30
+            }
+    MinifyResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        operation:
+          type: string
+          example: minify
+        data:
+          type: string
+          description: Compact JSON string
+          example: '{"a":1,"b":2}'
+    ValidateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        operation:
+          type: string
+          example: validate
+        valid:
+          type: boolean
+          description: Whether the provided JSON is valid
+          example: true
+        error:
+          type: object
+          nullable: true
+          description: Error information when validation fails
+          properties:
+            message:
+              type: string
+            position:
+              type: integer
+              nullable: true
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+              example: "Invalid JSON payload"
+  responses:
+    NotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            notFound:
+              value:
+                success: false
+                error:
+                  message: "Not Found"
+    InternalError:
+      description: Internal Server Error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            internal:
+              value:
+                success: false
+                error:
+                  message: "Internal Server Error"
+security: []
