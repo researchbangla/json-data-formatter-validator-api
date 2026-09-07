@@ -192,6 +192,111 @@ app.post('/api/transform/json-to-csv', (req, res) => {
   return res.json({ success: true, operation: 'json-to-csv', data: csv });
 });
 
+// POST /api/transform/csv-to-json - convert CSV string to array of objects
+app.post('/api/transform/csv-to-json', (req, res) => {
+  // Expecting { "csv": "..." }
+  if (!req.body || typeof req.body !== 'object' || typeof req.body.csv !== 'string') {
+    return res.status(400).json({ success: false, error: { message: 'Request body must be JSON with a "csv" string field' } });
+  }
+  let csv = req.body.csv;
+  // Remove UTF-8 BOM if present
+  if (csv.charCodeAt(0) === 0xFEFF) csv = csv.slice(1);
+
+  // Small CSV parser that handles quoted fields, doubled quotes, commas inside quotes, and CRLF/LF
+  function parseCSVToArray(input) {
+    const rows = [];
+    let cur = [];
+    let field = '';
+    let inQuotes = false;
+    let i = 0;
+    while (i < input.length) {
+      const ch = input[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (i + 1 < input.length && input[i + 1] === '"') {
+            // Escaped quote
+            field += '"';
+            i += 2;
+            continue;
+          }
+          // Closing quote
+          inQuotes = false;
+          i++;
+          continue;
+        }
+        // Regular char within quotes (including newlines)
+        field += ch;
+        i++;
+        continue;
+      }
+
+      // Not in quotes
+      if (ch === '"') {
+        inQuotes = true;
+        i++;
+        continue;
+      }
+      if (ch === ',') {
+        cur.push(field);
+        field = '';
+        i++;
+        continue;
+      }
+      if (ch === '\r') {
+        // CR or CRLF
+        if (i + 1 < input.length && input[i + 1] === '\n') i++;
+        cur.push(field);
+        field = '';
+        rows.push(cur);
+        cur = [];
+        i++;
+        continue;
+      }
+      if (ch === '\n') {
+        cur.push(field);
+        field = '';
+        rows.push(cur);
+        cur = [];
+        i++;
+        continue;
+      }
+      // Regular char
+      field += ch;
+      i++;
+    }
+    if (inQuotes) throw new Error('Malformed CSV: unmatched quote');
+    // push last field
+    // If the input ended with a newline, we'll have pushed the row already and cur will be [] and field ''.
+    // But in that case, avoid pushing an extra empty row.
+    if (field !== '' || cur.length > 0) {
+      cur.push(field);
+      rows.push(cur);
+    }
+    return rows;
+  }
+
+  try {
+    const arr = parseCSVToArray(csv);
+    if (arr.length === 0) return res.json({ success: true, operation: 'csv-to-json', data: [] });
+    const headers = arr[0].map(h => h);
+    const data = arr.slice(1).map((row, idx) => {
+      // Allow rows shorter than headers (pad with empty strings)
+      if (row.length > headers.length) {
+        throw new Error(`Row ${idx + 2} has more fields than header (${row.length} > ${headers.length})`);
+      }
+      const padded = row.concat(Array(Math.max(0, headers.length - row.length)).fill(''));
+      const obj = {};
+      for (let i = 0; i < headers.length; i++) {
+        obj[headers[i]] = padded[i];
+      }
+      return obj;
+    });
+    return res.json({ success: true, operation: 'csv-to-json', data });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: { message: err && err.message ? err.message : 'Malformed CSV' } });
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ success: false, error: { message: 'Not Found' } });
