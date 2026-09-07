@@ -129,6 +129,69 @@ app.post('/api/validate', (req, res) => {
   }
 });
 
+// POST /api/transform/json-to-csv - convert an array of objects to CSV
+app.post('/api/transform/json-to-csv', (req, res) => {
+  const input = normalizeInput(req.body);
+  if (input.error) return res.status(400).json({ success: false, error: { message: input.error } });
+
+  let arr;
+  try {
+    const value = input.type === 'data' ? input.value : JSON.parse(input.raw);
+    if (!Array.isArray(value)) {
+      return res.status(400).json({ success: false, error: { message: 'Input must be a JSON array of objects' } });
+    }
+    arr = value;
+  } catch (err) {
+    return res.status(400).json({ success: false, error: { message: 'Invalid JSON input' } });
+  }
+
+  // Validate that each element is a plain object
+  for (let i = 0; i < arr.length; i++) {
+    const el = arr[i];
+    if (el === null || typeof el !== 'object' || Array.isArray(el)) {
+      return res.status(400).json({ success: false, error: { message: `Array element at index ${i} is not an object` } });
+    }
+  }
+
+  // Collect headers in order encountered across objects
+  const headers = [];
+  const seen = new Set();
+  for (const obj of arr) {
+    for (const key of Object.keys(obj)) {
+      if (!seen.has(key)) {
+        seen.add(key);
+        headers.push(key);
+      }
+    }
+  }
+
+  // CSV escape according to RFC4180: double quotes are escaped by doubling, and fields
+  // containing commas, quotes, or CR/LF are enclosed in double quotes.
+  function csvEscape(val) {
+    if (val === null || val === undefined) return '';
+    if (typeof val === 'object') {
+      try { val = JSON.stringify(val); } catch (e) { val = String(val); }
+    } else {
+      val = String(val);
+    }
+    const mustQuote = /[",\r\n,]/.test(val);
+    // escape double quotes by doubling
+    val = val.replace(/"/g, '""');
+    return mustQuote ? `"${val}"` : val;
+  }
+
+  // Build CSV lines: header row then each object row
+  const csvLines = [];
+  csvLines.push(headers.map(csvEscape).join(','));
+  for (const obj of arr) {
+    const row = headers.map(h => csvEscape(obj[h] === undefined ? '' : obj[h]));
+    csvLines.push(row.join(','));
+  }
+  const csv = csvLines.join('\r\n');
+
+  return res.json({ success: true, operation: 'json-to-csv', data: csv });
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ success: false, error: { message: 'Not Found' } });
