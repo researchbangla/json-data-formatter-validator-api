@@ -174,9 +174,9 @@ app.post('/api/transform/json-to-csv', (req, res) => {
     } else {
       val = String(val);
     }
-    const mustQuote = /[",\r\n,]/.test(val);
+    const mustQuote = /[\",\r\n,]/.test(val);
     // escape double quotes by doubling
-    val = val.replace(/"/g, '""');
+    val = val.replace(/\"/g, '\"\"');
     return mustQuote ? `"${val}"` : val;
   }
 
@@ -266,8 +266,6 @@ app.post('/api/transform/csv-to-json', (req, res) => {
     }
     if (inQuotes) throw new Error('Malformed CSV: unmatched quote');
     // push last field
-    // If the input ended with a newline, we'll have pushed the row already and cur will be [] and field ''.
-    // But in that case, avoid pushing an extra empty row.
     if (field !== '' || cur.length > 0) {
       cur.push(field);
       rows.push(cur);
@@ -280,7 +278,6 @@ app.post('/api/transform/csv-to-json', (req, res) => {
     if (arr.length === 0) return res.json({ success: true, operation: 'csv-to-json', data: [] });
     const headers = arr[0].map(h => h);
     const data = arr.slice(1).map((row, idx) => {
-      // Allow rows shorter than headers (pad with empty strings)
       if (row.length > headers.length) {
         throw new Error(`Row ${idx + 2} has more fields than header (${row.length} > ${headers.length})`);
       }
@@ -294,6 +291,80 @@ app.post('/api/transform/csv-to-json', (req, res) => {
     return res.json({ success: true, operation: 'csv-to-json', data });
   } catch (err) {
     return res.status(400).json({ success: false, error: { message: err && err.message ? err.message : 'Malformed CSV' } });
+  }
+});
+
+// POST /api/transform/json-to-yaml - convert JSON to YAML
+app.post('/api/transform/json-to-yaml', (req, res) => {
+  const input = normalizeInput(req.body);
+  if (input.error) return res.status(400).json({ success: false, error: { message: input.error } });
+
+  let value;
+  try {
+    value = input.type === 'data' ? input.value : JSON.parse(input.raw);
+  } catch (err) {
+    return res.status(400).json({ success: false, error: { message: 'Invalid JSON input' } });
+  }
+
+  // Only accept objects or arrays at top-level
+  if (value === null || (typeof value !== 'object')) {
+    return res.status(400).json({ success: false, error: { message: 'Input must be a JSON object or array' } });
+  }
+
+  // Simple YAML serializer without external deps.
+  function isSimpleKey(key) {
+    return /^[A-Za-z0-9_-]+$/.test(key);
+  }
+
+  function toYAML(val, indentLevel) {
+    const indent = '  '.repeat(indentLevel);
+    // null
+    if (val === null) return 'null';
+    const t = typeof val;
+    if (t === 'boolean') return val ? 'true' : 'false';
+    if (t === 'number') return String(val);
+    if (t === 'string') {
+      // Use JSON.stringify to produce a safely escaped double-quoted string
+      return JSON.stringify(val);
+    }
+    if (Array.isArray(val)) {
+      if (val.length === 0) return '[]';
+      const lines = [];
+      for (const item of val) {
+        if (item === null || typeof item !== 'object') {
+          // primitive - put on same line
+          lines.push(indent + '- ' + toYAML(item, 0));
+        } else {
+          // object or array - nested block
+          lines.push(indent + '- ' + '\n' + toYAML(item, indentLevel + 1));
+        }
+      }
+      return lines.join('\n');
+    }
+    // object
+    const keys = Object.keys(val);
+    if (keys.length === 0) return '{}';
+    const lines = [];
+    for (const key of keys) {
+      const safeKey = isSimpleKey(key) ? key : JSON.stringify(key);
+      const v = val[key];
+      if (v === null || typeof v !== 'object') {
+        lines.push(indent + safeKey + ': ' + toYAML(v, 0));
+      } else {
+        // object or array
+        lines.push(indent + safeKey + ':');
+        lines.push(toYAML(v, indentLevel + 1));
+      }
+    }
+    // Ensure nested blocks have proper indentation
+    return lines.join('\n');
+  }
+
+  try {
+    const yaml = toYAML(value, 0);
+    return res.json({ success: true, operation: 'json-to-yaml', data: yaml });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: { message: 'Failed to convert JSON to YAML' } });
   }
 });
 
