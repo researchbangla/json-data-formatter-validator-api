@@ -368,6 +368,134 @@ app.post('/api/transform/json-to-yaml', (req, res) => {
   }
 });
 
+// POST /api/transform/yaml-to-json - convert YAML string to JSON value
+app.post('/api/transform/yaml-to-json', (req, res) => {
+  if (!req.body || typeof req.body !== 'object' || typeof req.body.yaml !== 'string') {
+    return res.status(400).json({ success: false, error: { message: 'Request body must be JSON with a "yaml" string field' } });
+  }
+  let src = req.body.yaml;
+  // Normalize line endings
+  src = src.replace(/\r\n/g, '\n');
+  // Split into lines
+  const rawLines = src.split('\n');
+  // Helper to get indentation (number of spaces)
+  function indentOf(line) {
+    let m = line.match(/^ */);
+    return m ? m[0].length : 0;
+  }
+  // Helper parse scalar
+  function parseScalar(token) {
+    if (token === 'null') return null;
+    if (token === 'true') return true;
+    if (token === 'false') return false;
+    if (token === '[]') return [];
+    if (token === '{}') return {};
+    // Number?
+    if (/^-?[0-9]+(\.[0-9]+)?$/.test(token)) return Number(token);
+    // Quoted string (JSON style)
+    if ((token.startsWith('"') && token.endsWith('"')) || (token.startsWith("'") && token.endsWith("'"))) {
+      try {
+        // Use JSON.parse for double-quoted; for single-quoted, unescape simply
+        if (token.startsWith('"')) return JSON.parse(token);
+        // single quotes: strip outer quotes and unescape single quotes by replacing \' with '
+        return token.slice(1, -1).replace(/\\'/g, "'");
+      } catch (e) {
+        throw new Error('Invalid quoted string');
+      }
+    }
+    // Fallback: treat as string
+    return token;
+  }
+
+  // Parse block recursively starting at index i where current indent is indentLevel
+  function parseBlock(i, indentLevel) {
+    const results = [];
+    let mapping = null; // if mapping detected
+
+    while (i < rawLines.length) {
+      const line = rawLines[i];
+      if (line.trim() === '') { i++; continue; }
+      const indent = indentOf(line);
+      if (indent < indentLevel) break; // belongs to parent
+      if (indent > indentLevel) {
+        // Indent deeper than expected: malformed unless previous item expects nested block
+        throw new Error(`Unexpected indent at line ${i + 1}`);
+      }
+      const content = line.trim();
+      // Sequence item
+      if (content.startsWith('-')) {
+        // ensure results is an array
+        if (mapping !== null && mapping !== 'sequence') throw new Error(`Mixed mapping and sequence at line ${i + 1}`);
+        mapping = 'sequence';
+        // content after '-'
+        let after = content.slice(1).trim();
+        if (after === '') {
+          // nested block: parse from next line with indentLevel + 2
+          const [value, nextIdx] = parseBlock(i + 1, indentLevel + 2);
+          results.push(value);
+          i = nextIdx;
+          continue;
+        }
+        // inline value
+        results.push(parseScalar(after));
+        i++;
+        continue;
+      }
+      // Mapping item key: value
+      const colonIndex = content.indexOf(':');
+      if (colonIndex === -1) {
+        throw new Error(`Invalid mapping entry at line ${i + 1}`);
+      }
+      // ensure results is a mapping
+      if (mapping !== null && mapping !== 'mapping') throw new Error(`Mixed sequence and mapping at line ${i + 1}`);
+      mapping = 'mapping';
+      let rawKey = content.slice(0, colonIndex).trim();
+      let rawVal = content.slice(colonIndex + 1).trim();
+      // parse key: could be JSON quoted or simple
+      let key;
+      if (rawKey.startsWith('"') || rawKey.startsWith("'")) {
+        try { key = JSON.parse(rawKey); } catch (e) { key = rawKey.slice(1, -1); }
+      } else {
+        key = rawKey;
+      }
+      if (rawVal === '') {
+        // nested block
+        const [value, nextIdx] = parseBlock(i + 1, indentLevel + 2);
+        if (results.length === 0) results.push({});
+        const obj = results[results.length - 1];
+        if (typeof obj !== 'object' || Array.isArray(obj) || obj === null) {
+          throw new Error(`Invalid mapping context at line ${i + 1}`);
+        }
+        obj[key] = value;
+        i = nextIdx;
+        continue;
+      }
+      // inline value
+      const parsed = parseScalar(rawVal);
+      if (results.length === 0) results.push({});
+      const obj = results[results.length - 1];
+      if (typeof obj !== 'object' || Array.isArray(obj) || obj === null) {
+        throw new Error(`Invalid mapping context at line ${i + 1}`);
+      }
+      obj[key] = parsed;
+      i++;
+    }
+    if (mapping === 'sequence') return [results, i];
+    if (mapping === 'mapping') return [results[0] || {}, i];
+    // empty block
+    return [null, i];
+  }
+
+  try {
+    const [value, idx] = parseBlock(0, 0);
+    // If parsing produced null (empty), return empty object
+    const out = value === null ? {} : value;
+    return res.json({ success: true, operation: 'yaml-to-json', data: out });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: { message: err && err.message ? err.message : 'Malformed YAML' } });
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ success: false, error: { message: 'Not Found' } });
